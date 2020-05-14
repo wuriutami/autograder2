@@ -1,0 +1,406 @@
+% Autograder Script
+%
+%
+
+
+## Synopsis
+
+`autograder.py [options] file1 [file2 [file3...]]`
+
+## Overview
+
+A simple python script designed to help automate grading of programming
+assignments.  The script takes care of a lot of the painful and time-consuming
+grunt-work associated with grading programs (compiling, running tests,
+producing reports).  It gives you a good sketch of programs' correctness
+leaving only a brief manual review to be done. At a high level it has the
+following input / output behavior:
+
+#### Inputs:
+
+* The work to be graded, organized into a directory tree (see below)
+* A makefile (if necessary)
+* A test script to run through the functionality of student code
+* The expected output for the above test script
+
+#### Outputs:
+
+* A tab-delimited file of `student / score` lines for copying and pasting into
+  a spreadsheet
+* A file summarizing the results, compiler output, etc. in each student's
+  directory
+
+#### Other features:
+
+* Detects infinite loops and tries to gracefully shut down the offending
+  process(es)
+* Checks timestamps to avoid unnecessary re-grades
+* Manual modification / adjustment of grades is easy
+
+
+### Source code
+
+You can get the code here:\
+`$ git clone git@bitbucket.org:wes_ccny/autograder.git`
+
+Or download the source from the project page: \
+<https://bitbucket.org/wes_ccny/autograder/src>
+
+
+
+## Details
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~ {.latex}
+usage: autograder.py [-h] [-d MAINDIR] [-t TOOLONG] [-l LOGFILE] [-m MAKESTR]
+                     [-s TESTSCRIPT] [-k DELIMITER] [-o SCORESFILE] [-p] [-f]
+                     [--exclude EXCLUDE [EXCLUDE ...]]
+                     implfiles [implfiles ...]
+
+Autograder script.
+
+positional arguments:
+  implfiles             Name of students' implementation file(s), e.g.
+                        'hello.cpp'.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -d MAINDIR, --maindir MAINDIR
+                        The main directory containing student directories.
+						Default: the current directory.
+  -t TOOLONG, --toolong TOOLONG
+                        No. of seconds before program is determined non-
+                        responsive.  Default: 5.
+  -l LOGFILE, --logfile LOGFILE
+                        Temporary file to store compiler output.
+  						Default: "clog"
+  -m MAKESTR, --makestr MAKESTR
+                        Command to run in order to build students' code.
+  						Default: "/usr/bin/make"
+  -s TESTSCRIPT, --testscript TESTSCRIPT
+                        Test script to produce delimited output of tests.
+						Default: "./test.sh"
+  -k DELIMITER, --delimiter DELIMITER
+  						Delimiter used to separate tests in the output files.
+						Default: "@"
+  -o SCORESFILE, --scoresfile SCORESFILE
+                        Filename to store the tab-delimited scores.
+						Default: constructed from the name of the first
+						implementation file with the suffix "_scores"
+  -p, --missingok       Attempt to grade, even if some implementation files
+                        are missing.
+  -f, --force 			Force regrade, even if files are up to date.
+  						Note: this can also be accomplished by changing the
+						output file: --o="aNewFile"
+  --exclude EXCLUDE [EXCLUDE ...]
+                        List of directories (relative to maindir) to exclude.
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+## Setup
+
+Make a directory for each student's work, and store all of these directories
+under one main directory, which should have nothing else in it to begin with.
+If you have more than one class, keep a separate directory for each one.  Here
+is an example of the directory structure, assuming that the class was called
+"103" and that the source code for the assignment was named `hello.cpp`:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+~Grading/
+ |~103/
+ | |~student1/
+ | | `-hello.cpp
+ | |~student2/
+ | | `-hello.cpp
+ | |~student3/
+ | | `-hello.cpp
+ | |~student4/
+ | | `-hello.cpp
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Other files can be present in the student directory; only the ones mentioned
+by the `implfiles` option will be used.  There can also be other files in the
+main directory.
+
+The script will perform the following steps for every student:
+
+1. Move student's work to the main directory (the one containing all of the
+   student directories; `Grading/103/`, in the example above).
+1. If the submission is already graded (determined by checking file
+   modification times), skip and move to next student. This can be overridden
+   by the `--force` option.
+1. Try to compile the code (if necessary), recording the results for the
+   student's reference.
+1. Run a test script which interfaces with the student's program (either via a
+   language-level interface, or through the shell, etc.) and produces an
+   output file, named `output`.
+1. Compare the output file with the *s*olution's *output* (named `soutput`)
+   and record the results, both in a file to return to the student, and as a
+   line in a tab-delimited file which can be copied / pasted into a
+   spreadsheet.
+
+Naturally, steps 3 and 4 require some configuration (e.g., providing makefiles
+and test scripts).  See below for examples.
+
+
+## Example Usage
+
+### Standalone C++ Code; Testing with Bash
+
+This was the first assignment of an intro course on programming.  The
+assignment was to modify the "hello world" program to receive two input
+strings from the user and then format and print a message based on those
+strings back to standard output.  You can find the [full project description
+here][p1readme], which might make things more clear.  To test, we create a
+script that echoes random strings into the program, and then searches the
+output for the random strings to make sure they were recorded.  (Note that
+`grep` will give a return code of 1 for a failed search, and 0 otherwise.)
+
+~~~~~~~~~~~~~~~~~~~~~~ {.bash .numberLines}
+#!/bin/bash
+
+strings=( 'sasew' 'hehea' '2s9df' 'kk22' '9rIaf2' 'DFDaj' '43adf' '9khieq' )
+
+for ((i=0; i < ${#strings[@]}; i=i+2)); do
+	tmpoutput=`echo -e ${strings[$i]}'\n'${strings[$i+1]} | ./hello`
+	echo $tmpoutput | grep -q "${strings[$i]}"
+	echo -n $?'@' >> output
+	echo $tmpoutput | grep -q "${strings[$i+1]}"
+	echo -n $?'@' >> output
+	tmpoutput=""
+done
+echo "" >> output
+~~~~~~~~~~~~~~~~~~~~~~
+
+Note that the different tests are delimited by the `@` symbol.  This can be
+modified via the `--delimiter` option.  Anyhow, a correct program will have
+output of `0@0@0@0@0@0@0@0@`; thus the solution's output (`soutput`) should
+contain exactly this string.
+
+To invoke the autograder in such a situation, we could populate the main
+directory with the following:
+
+* a straightforward makefile to build `hello.cpp` into the
+  executable file `hello`;
+* the above script with the name `test.sh`;
+* the solution's output, `soutput` (which just contains the above string of
+  `0@0@0@...`).
+
+To reiterate, the directory should look something like the following before
+running the autograder:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+~Grading/
+ |~103/
+ | |~student1/
+ | | `-hello.cpp
+ | |~student2/
+ | | `-hello.cpp
+ | |~student3/
+ | | `-hello.cpp
+ | |~student4/
+ | | `-hello.cpp
+ | |-Makefile
+ | |-test.sh
+ | |-soutput
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+Since we have used mainly the default values, we can simply invoke the
+autograder via:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~ {.bash}
+$ autograder.py --maindir "~/Grading/103/" hello.cpp
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This will produce a file named `hello.cpp_result` in every student's directory
+containing:
+
+* a summary
+* the compiler output
+* detail on any failed tests
+* the student's source code
+
+For example:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~ {.latex}
+Executive summary: All tests passed.
+
+Compiler output:
+
+make: Warning: File `hello' has modification time 0.3 s in the future
+g++ -Wall hello.cpp -o hello
+make: warning:  Clock skew detected.  Your build may be incomplete.
+Score: 9 out of 9 = 100%
+
+*************Original submission*************
+
+###########  hello.cpp  ###########
+
+/*
+ * CSc103 Project 1: (hello_world++)
+ *
+ */
+
+#include <iostream>
+using std::cin;
+using std::cout;
+using std::string;
+#include <string>
+...
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+### Python Code; Python Test Script
+
+For this example, suppose the students submit a python module `rbtree.py` that
+exports a few classes, perhaps for a red-black tree.  We can then import that
+module from another python script, call it `rbtest.py`, and write the tests
+there, producing a delimited output file.  (*Note:* this assumes that you have
+published a common interface that everyone adheres to -- e.g., a skeleton
+implementation file.) In this case, there are only a few modifications
+required to the default arguments.  We no longer need a makefile, and we can
+run our `rbtest.py` script as the test program.  Hence, the call to the
+autograder would look something like this:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~ {.bash}
+$ autograder.py --maindir "~/Grading/103/" --makestr "" \
+  --testscript "python -B rbtest.py" rbtree.py
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The `-B` flag to the python interpreter is necessary to prevent the generation
+of byte code, which ensures that every students' work is graded (else, the old
+byte code may be used instead of the very recently moved python code).
+
+### Mixed language projects
+
+It may be the case that you don't really care what language your students
+program in, but you still would very much not like to grade all the homework
+yourself.  This may still be feasible in a number of situations.  Some
+examples, in increasing order of difficulty:
+
+1. There is only one file to be submitted, and all languages are scripting
+   languages (do not need to be compiled).  In this case, testing can probably
+   be done with a shell script and no makefile.  Just make sure every file has
+   the proper `#!/path/to/interpreter` line at the top.  *Note:* you may want
+   to have a make file anyway, just to clean up leftover byte code -- see the
+   remarks above in the python example.
+1. There is only one main file, but not all languages are scripting languages
+   (some need to be compiled).  In this case, require that students with
+   compiled code submit a makefile and set:
+   	
+		--makestr="if [ ! -e Makefile ]; then echo ; else make; fi"
+		
+	 *Note:* the `echo` will put an empty line in the compiler log, and will
+   make sure that the return code of this command is 0 when there is no
+   makefile (so that the autograder does not think that the build failed).
+   There's probably a much smarter way to do this, but I've yet to think of
+   it.  Make sure you have `--missingok` set for this scenario.
+1. Multiple files / modules, and no language requirements.  If you can come up
+   with an exhaustive list of files, I suppose you could imitate the
+   instructions above.  Else, I'm not sure there is a lot to be done besides
+   just asking for binaries to be submitted...
+
+ 
+
+## Other Notes
+
+### Manually updating grades
+
+Should you find yourself wanting to alter the automatically assigned grade,
+just update the
+scores file (`--scoresfile`) manually before copying into your spreadsheet.
+Subsequent runs of the autograder will not affect your changes, **UNLESS:**
+
+If you later on supply the `--force` option, *all* work will be
+re-graded, and *your manual changes will be undone* in the scores file!
+
+### The `--delimiter` option
+
+The script simply uses python's [`split()` function][pysplit] to parse the
+output file, using the `--delimiter` option for the `sep` argument.  Hence,
+the delimiter does not need to be a single character (see [the
+documentation][pysplit]).  *Note:*  if you supply the empty string
+(`--delimiter=""`), then python's default split (based on whitespace /
+newlines) will be used.
+
+### The `--missingok` flag
+
+By default, submissions will immediately be marked as wrong if any of the
+files from the `implfiles` list are missing.  Setting `--missingok` overrides
+this behavior and tries to run the test script even if files are missing.
+
+### Makefiles
+
+If your
+makefile supports a `clean` target, it will be executed at the start of every
+iteration to clean up the build output from the previous student.  If not, you
+may want to ensure that there are no other leftover object files, etc. lying
+around that might affect the build of the next student's code (only the
+source files will be removed by the autograder script).^[`make`
+might handle this without intervention if you can guarantee that the
+newly copied source file has a modification date later than the other
+files.  However, it seems safer to just erase all the build output
+completely.  After all, correctness is paramount.]
+
+
+### Accessing the student directories
+
+At times, it may be useful to read from or write to the student directory from
+the test script, however, the test script is running in a directory above the
+student's, making it difficult to determine
+which student's work is currently being graded.  For these scenarios, an
+environment variable is exported called `$AG_current_dir`, which will be set
+to the directory (not absolute) of the student whose work is currently being
+graded.  This is useful for cases when there is no easy way to automate the
+grading, say in the case of a GUI program.  In this case, the autograder can
+still be used to automate the builds, and write the binaries out to each
+student's directory for manual inspection.  Here is an example `test.sh`:
+
+~~~~~~~~~~~~~~~~~~~~~~~~~ {.bash}
+#!/bin/bash
+
+if [[ -e binaryname ]]; then
+	cp binaryname "$AG_current_dir/binaryname"
+	# perhaps issue a few points just for something that compiles:
+	echo @@@ > output
+fi
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+
+### The obvious hazards of running random code
+
+**Important:** I'm sure this goes without saying, but it is not a great idea
+to run unfamiliar code on your machine.^[Who knows -- you might be so tired
+from all the grading that you forgot to think about this...]  Thus, grading
+must be done in a virtual machine, `chroot` jail, or similar.^[Personal
+preference: qemu.  Might try LXC if I have the time...]
+
+
+## Known Limitations
+
+The following items are not currently configurable.^[Not for any good reason;
+just a lack of time and necessity.]
+
+* The solution's output must be named `soutput` and the output file from the
+  students' answers must be named `output`.
+* The output (for the student) is constructed from the first implementation
+  file's name, concatenated with the string "_result.txt".
+* The matching for each test is exact (except for stripping whitespace at the
+  end).  Filtering the output with awk or sed is usually an easy enough fix
+  when exact matching is undesirable.
+
+
+## Dependencies / Requirements
+
+* Python 2.7
+* A compiler / interpreter for whatever code you are testing
+* `make` will make life easier
+* Should work on most unix/linux platforms
+
+## Credits
+
+The `compare()` function was adapted from code by [David Branner][david].
+
+<!--  links  -->
+
+[pysplit]: http://docs.python.org/library/stdtypes.html#str.split
+[david]: https://bitbucket.org/dpb/
+[p1readme]: p1readme.html
